@@ -395,7 +395,7 @@ wp_Restore() {
     WinGet, id, list, , , Program Manager
     Loop, %id%
     {
-        ; Aktionen rückhängig ...
+        ; Aktionen rï¿½ckhï¿½ngig ...
         hwnd := id%A_Index%
         WinGetTitle, WinTitle, ahk_id %hwnd%
         
@@ -872,6 +872,7 @@ WPXA_GatherWindowsOnMonitor(md)
     SysGet, mc, MonitorCount
     Loop, %mc%
         SysGet, mon%A_Index%, MonitorWorkArea, %A_Index%
+    OutputDebug, % mc
     
     if md = M
     {   ; Special exception for 'M', since the desktop window
@@ -895,7 +896,121 @@ WPXA_GatherWindowsOnMonitor(md)
     mdy := mon%md%Top
     mdw := mon%md%Right - mdx
     mdh := mon%md%Bottom - mdy
+    ; OutputDebug, %mdx% %mdy% %mdw% %mdh%   
+    Loop, %win%
+    {
+        ; If this window matches the GatherExclude group, don't touch it.
+        if (WinExist("ahk_group GatherExclude ahk_id " . win%A_Index%))
+            continue
+        
+        ; Set Last Found Window.
+        if (!WinExist("ahk_id " . win%A_Index%))
+            continue
+
+        WinGet, procname, ProcessName
+        ; Check process (program) exclusion list.
+        if procname in %ProcessGatherExcludeList%
+            continue
+        
+        WinGetPos, x, y, w, h
+        
+        ; Determine which monitor this window is on.
+        xc := x+w/2, yc := y+h/2
+        ms := 0
+        Loop, %mc%
+            if (xc >= mon%A_Index%Left && xc <= mon%A_Index%Right
+                && yc >= mon%A_Index%Top && yc <= mon%A_Index%Bottom)
+            {
+                ms := A_Index
+                break
+            }
+        ; If already on destination monitor, skip this window.
+        if (ms = md)
+            continue
+        
+        WinGet, state, MinMax
+        if (state = 1) {
+            WinRestore
+            WinGetPos, x, y, w, h
+        }
     
+        if ms
+        {
+            ; Source monitor
+            msx := mon%ms%Left
+            msy := mon%ms%Top
+            msw := mon%ms%Right - msx
+            msh := mon%ms%Bottom - msy
+            
+            ; If the window is resizable, scale it by the monitors' resolution difference.
+            if (wp_IsResizable()) {
+                w *= (mdw/msw)
+                h *= (mdh/msh)
+            }
+        
+            ; Move window, using resolution difference to scale co-ordinates.
+            WinMove,,, mdx + (x-msx)*(mdw/msw), mdy + (y-msy)*(mdh/msh), w, h
+        }
+        else
+        {   ; Window not on any monitor, move it to center.
+            WinMove,,, mdx + (mdw-w)/2, mdy + (mdh-h)/2
+        }
+
+        if state = 1
+            WinMaximize
+    }
+}
+
+/*
+===============================================================================
+Function:   WPXA_SwitchActiveWindows
+    Switch active windows on dual monitor setup, for use with pen
+
+Parameters:
+    ~
+  
+Author(s):
+    Original - Lexikos - http://www.autohotkey.com/forum/topic21703.html
+===============================================================================
+*/
+WPXA_SwitchActiveWindows(md)
+{
+    global ProcessGatherExcludeList
+    
+    SetWinDelay, 0
+    
+    ; List all visible windows.
+    WinGet, win, List
+    
+    ; Copy bounds of all monitors to an array.
+    SysGet, mc, MonitorCount
+    Loop, %mc%
+        SysGet, mon%A_Index%, MonitorWorkArea, %A_Index%
+    OutputDebug, % mc
+    
+    if md = M
+    {   ; Special exception for 'M', since the desktop window
+        ; spreads across all screens.
+        CoordMode, Mouse, Screen
+        MouseGetPos, x, y
+        md := wp_GetMonitorAt(x, y, 0)
+    }
+    else if md is not integer
+    {   ; Support A, P and WinTitle.
+        ; (Gather at screen containing specified window.)
+        wp_WinExist(md)
+        WinGetPos, x, y, w, h
+        md := wp_GetMonitorAt(x+w/2, y+h/2, 0)
+    }
+    if (md<1 or md>mc)
+        return
+    
+    ; Destination monitor
+    mdx := mon%md%Left
+    mdy := mon%md%Top
+    mdw := mon%md%Right - mdx
+    mdh := mon%md%Bottom - mdy
+    OutputDebug, %mdx% %mdy% %mdw% %mdh%   
     Loop, %win%
     {
         ; If this window matches the GatherExclude group, don't touch it.
